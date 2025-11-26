@@ -1,0 +1,115 @@
+import React from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { format } from 'date-fns';
+import { Clock, MapPin, AlertTriangle } from 'lucide-react';
+
+export default function TimesheetTable({ entries, showEmployee = false }) {
+  const sortedEntries = [...entries].sort((a, b) => 
+    new Date(b.clock_in_time) - new Date(a.clock_in_time)
+  );
+
+  const getStatusBadge = (status) => {
+    const styles = {
+      active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      completed: 'bg-blue-50 text-blue-700 border-blue-200',
+      auto_closed: 'bg-amber-50 text-amber-700 border-amber-200',
+      corrected: 'bg-purple-50 text-purple-700 border-purple-200'
+    };
+    return styles[status] || 'bg-slate-50 text-slate-700 border-slate-200';
+  };
+
+  const formatDuration = (hours) => {
+    if (!hours) return '-';
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    return `${h}h ${m}m`;
+  };
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg font-semibold">Time Entries</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50/50">
+                {showEmployee && <TableHead className="font-semibold">Employee</TableHead>}
+                <TableHead className="font-semibold">Date</TableHead>
+                <TableHead className="font-semibold">Clock In</TableHead>
+                <TableHead className="font-semibold">Clock Out</TableHead>
+                <TableHead className="font-semibold">Duration</TableHead>
+                <TableHead className="font-semibold">Overtime</TableHead>
+                <TableHead className="font-semibold">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sortedEntries.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={showEmployee ? 7 : 6} className="text-center py-12 text-slate-400">
+                    <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No time entries found</p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                sortedEntries.map((entry) => (
+                  <TableRow key={entry.id} className="hover:bg-slate-50/50">
+                    {showEmployee && (
+                      <TableCell className="font-medium">{entry.employee_name}</TableCell>
+                    )}
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {format(new Date(entry.date), 'EEE, MMM d')}
+                        {entry.is_late && (
+                          <AlertTriangle className="w-4 h-4 text-amber-500" />
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <p>{format(new Date(entry.clock_in_time), 'HH:mm')}</p>
+                        {entry.clock_in_location?.address && (
+                          <p className="text-xs text-slate-400 flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {entry.clock_in_location.address}
+                          </p>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {entry.clock_out_time ? (
+                        <p>{format(new Date(entry.clock_out_time), 'HH:mm')}</p>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-medium">{formatDuration(entry.total_hours)}</span>
+                    </TableCell>
+                    <TableCell>
+                      {entry.overtime_hours > 0 ? (
+                        <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
+                          +{formatDuration(entry.overtime_hours)}
+                        </Badge>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={getStatusBadge(entry.status)}>
+                        {entry.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
