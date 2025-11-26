@@ -1,0 +1,368 @@
+import React, { useState, useEffect } from 'react';
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Building2, Clock, MapPin, Bell, Shield, Loader2, Save, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+
+export default function Settings() {
+  const queryClient = useQueryClient();
+  const [settings, setSettings] = useState(null);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  const { data: existingSettings = [], isLoading } = useQuery({
+    queryKey: ['companySettings'],
+    queryFn: () => base44.entities.CompanySettings.list()
+  });
+
+  useEffect(() => {
+    if (existingSettings.length > 0) {
+      setSettings(existingSettings[0]);
+    } else {
+      setSettings({
+        company_name: '',
+        default_daily_hours: 8,
+        default_weekly_hours: 40,
+        week_start_day: 'monday',
+        overtime_multiplier: 1.5,
+        enable_geofencing: false,
+        geofence_radius_meters: 100,
+        office_locations: [],
+        auto_clock_out_hours: 12,
+        grace_period_minutes: 15,
+        break_duration_minutes: 60,
+        currency: 'ZAR',
+        timezone: 'Africa/Johannesburg'
+      });
+    }
+  }, [existingSettings]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data) => {
+      if (existingSettings.length > 0) {
+        return base44.entities.CompanySettings.update(existingSettings[0].id, data);
+      } else {
+        return base44.entities.CompanySettings.create(data);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companySettings'] });
+      setHasChanges(false);
+      toast.success('Settings saved successfully');
+    }
+  });
+
+  const handleChange = (field, value) => {
+    setSettings(prev => ({ ...prev, [field]: value }));
+    setHasChanges(true);
+  };
+
+  const addLocation = () => {
+    setSettings(prev => ({
+      ...prev,
+      office_locations: [
+        ...(prev.office_locations || []),
+        { name: '', address: '', latitude: 0, longitude: 0 }
+      ]
+    }));
+    setHasChanges(true);
+  };
+
+  const updateLocation = (index, field, value) => {
+    setSettings(prev => {
+      const locations = [...(prev.office_locations || [])];
+      locations[index] = { ...locations[index], [field]: value };
+      return { ...prev, office_locations: locations };
+    });
+    setHasChanges(true);
+  };
+
+  const removeLocation = (index) => {
+    setSettings(prev => ({
+      ...prev,
+      office_locations: prev.office_locations.filter((_, i) => i !== index)
+    }));
+    setHasChanges(true);
+  };
+
+  const handleSave = () => {
+    saveMutation.mutate(settings);
+  };
+
+  if (isLoading || !settings) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Settings</h1>
+            <p className="text-slate-500 mt-1">Configure your attendance system</p>
+          </div>
+          <Button 
+            onClick={handleSave} 
+            disabled={!hasChanges || saveMutation.isPending}
+            className="bg-slate-900 hover:bg-slate-800"
+          >
+            {saveMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
+            Save Changes
+          </Button>
+        </div>
+
+        <div className="space-y-6">
+          {/* Company Info */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-50">
+                  <Building2 className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <CardTitle>Company Information</CardTitle>
+                  <CardDescription>Basic company details</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Company Name</Label>
+                  <Input
+                    value={settings.company_name}
+                    onChange={(e) => handleChange('company_name', e.target.value)}
+                    placeholder="Your Company Name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Currency</Label>
+                  <Select value={settings.currency} onValueChange={(v) => handleChange('currency', v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ZAR">ZAR - South African Rand</SelectItem>
+                      <SelectItem value="USD">USD - US Dollar</SelectItem>
+                      <SelectItem value="EUR">EUR - Euro</SelectItem>
+                      <SelectItem value="GBP">GBP - British Pound</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Timezone</Label>
+                <Select value={settings.timezone} onValueChange={(v) => handleChange('timezone', v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Africa/Johannesburg">Africa/Johannesburg (SAST)</SelectItem>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                    <SelectItem value="America/New_York">America/New_York (EST)</SelectItem>
+                    <SelectItem value="Europe/London">Europe/London (GMT)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Working Hours */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-50">
+                  <Clock className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <CardTitle>Working Hours</CardTitle>
+                  <CardDescription>Default working hour settings</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Default Daily Hours</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="24"
+                    value={settings.default_daily_hours}
+                    onChange={(e) => handleChange('default_daily_hours', parseFloat(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Default Weekly Hours</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="168"
+                    value={settings.default_weekly_hours}
+                    onChange={(e) => handleChange('default_weekly_hours', parseFloat(e.target.value))}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Week Starts On</Label>
+                  <Select value={settings.week_start_day} onValueChange={(v) => handleChange('week_start_day', v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monday">Monday</SelectItem>
+                      <SelectItem value="sunday">Sunday</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Overtime Multiplier</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="3"
+                    value={settings.overtime_multiplier}
+                    onChange={(e) => handleChange('overtime_multiplier', parseFloat(e.target.value))}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Grace Period (minutes)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={settings.grace_period_minutes}
+                    onChange={(e) => handleChange('grace_period_minutes', parseInt(e.target.value))}
+                  />
+                  <p className="text-xs text-slate-500">Minutes before marking as late</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Auto Clock-Out (hours)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="24"
+                    value={settings.auto_clock_out_hours}
+                    onChange={(e) => handleChange('auto_clock_out_hours', parseInt(e.target.value))}
+                  />
+                  <p className="text-xs text-slate-500">Auto close sessions after X hours</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Location Settings */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-purple-50">
+                    <MapPin className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <CardTitle>Location Settings</CardTitle>
+                    <CardDescription>Geofencing and office locations</CardDescription>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Enable Geofencing</p>
+                  <p className="text-sm text-slate-500">Restrict clock-in to specific locations</p>
+                </div>
+                <Switch
+                  checked={settings.enable_geofencing}
+                  onCheckedChange={(v) => handleChange('enable_geofencing', v)}
+                />
+              </div>
+
+              {settings.enable_geofencing && (
+                <>
+                  <Separator />
+                  <div className="space-y-2">
+                    <Label>Geofence Radius (meters)</Label>
+                    <Input
+                      type="number"
+                      min="10"
+                      max="1000"
+                      value={settings.geofence_radius_meters}
+                      onChange={(e) => handleChange('geofence_radius_meters', parseInt(e.target.value))}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Office Locations</Label>
+                      <Button variant="outline" size="sm" onClick={addLocation}>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add Location
+                      </Button>
+                    </div>
+                    
+                    {settings.office_locations?.map((loc, index) => (
+                      <div key={index} className="p-4 bg-slate-50 rounded-lg space-y-3">
+                        <div className="flex items-start justify-between">
+                          <Input
+                            placeholder="Location Name"
+                            value={loc.name}
+                            onChange={(e) => updateLocation(index, 'name', e.target.value)}
+                            className="flex-1 mr-2"
+                          />
+                          <Button variant="ghost" size="icon" onClick={() => removeLocation(index)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        </div>
+                        <Input
+                          placeholder="Address"
+                          value={loc.address}
+                          onChange={(e) => updateLocation(index, 'address', e.target.value)}
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input
+                            type="number"
+                            step="any"
+                            placeholder="Latitude"
+                            value={loc.latitude}
+                            onChange={(e) => updateLocation(index, 'latitude', parseFloat(e.target.value))}
+                          />
+                          <Input
+                            type="number"
+                            step="any"
+                            placeholder="Longitude"
+                            value={loc.longitude}
+                            onChange={(e) => updateLocation(index, 'longitude', parseFloat(e.target.value))}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
