@@ -1,0 +1,182 @@
+import React, { useState, useEffect } from 'react';
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { WifiOff, Wifi, RefreshCw, Check, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+
+const OFFLINE_STORAGE_KEY = 'offline_time_entries';
+
+export const getOfflineEntries = () => {
+  try {
+    const stored = localStorage.getItem(OFFLINE_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveOfflineEntry = (entry) => {
+  const entries = getOfflineEntries();
+  entries.push({ ...entry, offline_id: Date.now(), pending_sync: true });
+  localStorage.setItem(OFFLINE_STORAGE_KEY, JSON.stringify(entries));
+};
+
+export const updateOfflineEntry = (offlineId, updates) => {
+  const entries = getOfflineEntries();
+  const index = entries.findIndex(e => e.offline_id === offlineId);
+  if (index !== -1) {
+    entries[index] = { ...entries[index], ...updates };
+    localStorage.setItem(OFFLINE_STORAGE_KEY, JSON.stringify(entries));
+  }
+};
+
+export const removeOfflineEntry = (offlineId) => {
+  const entries = getOfflineEntries().filter(e => e.offline_id !== offlineId);
+  localStorage.setItem(OFFLINE_STORAGE_KEY, JSON.stringify(entries));
+};
+
+export const clearSyncedEntries = () => {
+  const entries = getOfflineEntries().filter(e => e.pending_sync);
+  localStorage.setItem(OFFLINE_STORAGE_KEY, JSON.stringify(entries));
+};
+
+export default function OfflineSync({ onSyncComplete }) {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    const entries = getOfflineEntries();
+    setPendingCount(entries.filter(e => e.pending_sync).length);
+  }, [syncing]);
+
+  useEffect(() => {
+    if (isOnline && pendingCount > 0) {
+      syncOfflineEntries();
+    }
+  }, [isOnline]);
+
+  const syncOfflineEntries = async () => {
+    const entries = getOfflineEntries().filter(e => e.pending_sync);
+    if (entries.length === 0) return;
+
+    setSyncing(true);
+    let syncedCount = 0;
+
+    for (const entry of entries) {
+      try {
+        if (entry.type === 'clock_in') {
+          const created = await base44.entities.TimeEntry.create({
+            employee_id: entry.employee_id,
+            employee_name: entry.employee_name,
+            clock_in_time: entry.clock_in_time,
+            clock_in_location: entry.clock_in_location,
+            clock_in_method: entry.clock_in_method,
+            status: entry.status,
+            date: entry.date,
+            is_late: entry.is_late
+          });
+          
+          // Update employee status
+          if (entry.employee_db_id) {
+            await base44.entities.Employee.update(entry.employee_db_id, {
+              is_clocked_in: true,
+              current_session_id: created.id
+            });
+          }
+          
+          removeOfflineEntry(entry.offline_id);
+          syncedCount++;
+        } else if (entry.type === 'clock_out') {
+          // Find the active session and update it
+          const activeSessions = await base44.entities.TimeEntry.filter({
+            employee_id: entry.employee_id,
+            status: 'active'
+          });
+          
+          if (activeSessions.length > 0) {
+            await base44.entities.TimeEntry.update(activeSessions[0].id, {
+              clock_out_time: entry.clock_out_time,
+              clock_out_location: entry.clock_out_location,
+              status: 'completed',
+              total_hours: entry.total_hours,
+              overtime_hours: entry.overtime_hours
+            });
+            
+            if (entry.employee_db_id) {
+              await base44.entities.Employee.update(entry.employee_db_id, {
+                is_clocked_in: false,
+                current_session_id: null
+              });
+            }
+          }
+          
+          removeOfflineEntry(entry.offline_id);
+          syncedCount++;
+        }
+      } catch (err) {
+        console.error('Failed to sync entry:', err);
+      }
+    }
+
+    setSyncing(false);
+    
+    if (syncedCount > 0) {
+      toast.success(`Synced ${syncedCount} offline entries`);
+      onSyncComplete?.();
+    }
+    
+    setPendingCount(getOfflineEntries().filter(e => e.pending_sync).length);
+  };
+
+  if (isOnline && pendingCount === 0) return null;
+
+  return (
+    <div className={`flex items-center justify-between p-3 rounded-lg mb-4 ${
+      isOnline ? 'bg-emerald-50 border border-emerald-200' : 'bg-amber-50 border border-amber-200'
+    }`}>
+      <div className="flex items-center gap-2">
+        {isOnline ? (
+          <Wifi className="w-4 h-4 text-emerald-600" />
+        ) : (
+          <WifiOff className="w-4 h-4 text-amber-600" />
+        )}
+        <span className={`text-sm font-medium ${isOnline ? 'text-emerald-700' : 'text-amber-700'}`}>
+          {isOnline ? 'Online' : 'Offline Mode'}
+        </span>
+        {pendingCount > 0 && (
+          <Badge variant="secondary" className="bg-amber-100 text-amber-700">
+            {pendingCount} pending
+          </Badge>
+        )}
+      </div>
+      
+      {isOnline && pendingCount > 0 && (
+        <Button 
+          size="sm" 
+          variant="ghost" 
+          onClick={syncOfflineEntries}
+          disabled={syncing}
+          className="text-emerald-700 hover:bg-emerald-100"
+        >
+          <RefreshCw className={`w-4 h-4 mr-1 ${syncing ? 'animate-spin' : ''}`} />
+          Sync
+        </Button>
+      )}
+    </div>
+  );
+}
