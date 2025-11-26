@@ -1,0 +1,107 @@
+import React from 'react';
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Calendar, Check, X, Clock } from 'lucide-react';
+import { format } from 'date-fns';
+
+const LEAVE_TYPE_LABELS = {
+  annual: 'Annual Leave',
+  sick: 'Sick Leave',
+  unpaid: 'Unpaid Leave',
+  family_responsibility: 'Family Responsibility',
+  maternity: 'Maternity Leave',
+  paternity: 'Paternity Leave',
+  study: 'Study Leave',
+  other: 'Other'
+};
+
+export default function LeaveRequestCard({ request, onApprove, onReject, showActions = false }) {
+  const getStatusBadge = (status) => {
+    const styles = {
+      pending: 'bg-amber-50 text-amber-700 border-amber-200',
+      approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      rejected: 'bg-red-50 text-red-700 border-red-200',
+      cancelled: 'bg-slate-50 text-slate-700 border-slate-200'
+    };
+    return styles[status] || styles.pending;
+  };
+
+  const getStatusIcon = (status) => {
+    if (status === 'approved') return <Check className="w-3 h-3" />;
+    if (status === 'rejected') return <X className="w-3 h-3" />;
+    return <Clock className="w-3 h-3" />;
+  };
+
+  return (
+    <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <Avatar className="h-10 w-10">
+              <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-500 text-white text-sm">
+                {request.employee_name?.split(' ').map(n => n[0]).join('').slice(0, 2)}
+              </AvatarFallback>
+            </Avatar>
+            <div>
+              <h4 className="font-medium text-slate-900">{request.employee_name}</h4>
+              <p className="text-sm text-slate-500">{LEAVE_TYPE_LABELS[request.leave_type] || request.leave_type}</p>
+            </div>
+          </div>
+          <Badge variant="outline" className={getStatusBadge(request.status)}>
+            {getStatusIcon(request.status)}
+            <span className="ml-1 capitalize">{request.status}</span>
+          </Badge>
+        </div>
+
+        <div className="mt-4 flex items-center gap-4 text-sm text-slate-600">
+          <div className="flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <span>
+              {format(new Date(request.start_date), 'MMM d')} - {format(new Date(request.end_date), 'MMM d, yyyy')}
+            </span>
+          </div>
+          <Badge variant="secondary" className="bg-slate-100">
+            {request.total_days} day{request.total_days > 1 ? 's' : ''}
+          </Badge>
+        </div>
+
+        {request.reason && (
+          <p className="mt-3 text-sm text-slate-500 bg-slate-50 rounded-lg p-3">
+            {request.reason}
+          </p>
+        )}
+
+        {showActions && request.status === 'pending' && (
+          <div className="mt-4 flex gap-2">
+            <Button 
+              size="sm" 
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => onApprove(request)}
+            >
+              <Check className="w-4 h-4 mr-1" />
+              Approve
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+              onClick={() => onReject(request)}
+            >
+              <X className="w-4 h-4 mr-1" />
+              Reject
+            </Button>
+          </div>
+        )}
+
+        {request.reviewed_by && (
+          <p className="mt-3 text-xs text-slate-400">
+            {request.status === 'approved' ? 'Approved' : 'Rejected'} by {request.reviewed_by}
+            {request.reviewed_at && ` on ${format(new Date(request.reviewed_at), 'MMM d, yyyy')}`}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
