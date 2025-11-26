@@ -1,0 +1,102 @@
+import React from 'react';
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MoreVertical, Mail, Phone, Clock, Edit, Trash2 } from 'lucide-react';
+
+export default function EmployeeCard({ employee, onEdit, onDelete }) {
+  const getInitials = (name) => {
+    return name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??';
+  };
+
+  const getRoleBadge = (role) => {
+    const styles = {
+      admin: 'bg-purple-50 text-purple-700 border-purple-200',
+      manager: 'bg-blue-50 text-blue-700 border-blue-200',
+      employee: 'bg-slate-50 text-slate-700 border-slate-200'
+    };
+    return styles[role] || styles.employee;
+  };
+
+  return (
+    <Card className="border-0 shadow-sm hover:shadow-md transition-all duration-300 group">
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <Avatar className="h-14 w-14">
+                <AvatarImage src={employee.profile_image} />
+                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-lg font-medium">
+                  {getInitials(employee.full_name)}
+                </AvatarFallback>
+              </Avatar>
+              {employee.is_clocked_in && (
+                <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full" />
+              )}
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-semibold text-slate-900">{employee.full_name}</h3>
+              <p className="text-sm text-slate-500">{employee.position || employee.department || 'Employee'}</p>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className={getRoleBadge(employee.role)}>
+                  {employee.role}
+                </Badge>
+                {!employee.is_active && (
+                  <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                    Inactive
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onEdit(employee)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDelete(employee)} className="text-red-600">
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Mail className="w-4 h-4" />
+            <span className="truncate">{employee.email}</span>
+          </div>
+          {employee.phone && (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Phone className="w-4 h-4" />
+              <span>{employee.phone}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Clock className="w-4 h-4" />
+            <span>{employee.expected_daily_hours || 8}h expected daily</span>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
+          <span>ID: {employee.employee_id}</span>
+          {employee.is_clocked_in && (
+            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">
+              Currently Working
+            </Badge>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
