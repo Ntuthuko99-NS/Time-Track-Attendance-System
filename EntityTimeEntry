@@ -1,0 +1,97 @@
+{
+  "name": "TimeEntry",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string",
+      "description": "Reference to employee"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "clock_in_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "clock_out_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "clock_in_location": {
+      "type": "object",
+      "properties": {
+        "latitude": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number"
+        },
+        "address": {
+          "type": "string"
+        }
+      }
+    },
+    "clock_out_location": {
+      "type": "object",
+      "properties": {
+        "latitude": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number"
+        },
+        "address": {
+          "type": "string"
+        }
+      }
+    },
+    "clock_in_method": {
+      "type": "string",
+      "enum": [
+        "web",
+        "mobile",
+        "manual"
+      ],
+      "default": "web"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "completed",
+        "auto_closed",
+        "corrected"
+      ],
+      "default": "active"
+    },
+    "total_hours": {
+      "type": "number",
+      "description": "Total hours worked in this session"
+    },
+    "overtime_hours": {
+      "type": "number",
+      "default": 0
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "The calendar date of this entry"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "is_late": {
+      "type": "boolean",
+      "default": false
+    },
+    "shift_id": {
+      "type": "string",
+      "description": "Reference to assigned shift"
+    }
+  },
+  "required": [
+    "employee_id",
+    "clock_in_time",
+    "date"
+  ]
+}
