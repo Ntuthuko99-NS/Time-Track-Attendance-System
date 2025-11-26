@@ -1,0 +1,302 @@
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Clock, MapPin, LogIn, LogOut, Loader2, WifiOff } from 'lucide-react';
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { format } from 'date-fns';
+import { toast } from 'sonner';
+import OfflineSync, { saveOfflineEntry, getOfflineEntries, updateOfflineEntry } from './OfflineSync';
+
+export default function ClockWidget({ employee, onClockAction }) {
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [loading, setLoading] = useState(false);
+  const [location, setLocation] = useState(null);
+  const [locationError, setLocationError] = useState(null);
+  const [activeSession, setActiveSession] = useState(null);
+  const [sessionDuration, setSessionDuration] = useState(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [offlineSession, setOfflineSession] = useState(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Check for offline session on mount
+  useEffect(() => {
+    const offlineEntries = getOfflineEntries();
+    const activeOffline = offlineEntries.find(
+      e => e.employee_id === employee?.employee_id && e.type === 'clock_in' && e.status === 'active'
+    );
+    if (activeOffline) {
+      setOfflineSession(activeOffline);
+    }
+  }, [employee]);
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+        (err) => setLocationError('Location access denied')
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (employee?.is_clocked_in && employee?.current_session_id) {
+      loadActiveSession();
+    }
+  }, [employee]);
+
+  useEffect(() => {
+    const clockInTime = activeSession?.clock_in_time || offlineSession?.clock_in_time;
+    if (clockInTime) {
+      const interval = setInterval(() => {
+        const start = new Date(clockInTime);
+        const now = new Date();
+        const diff = Math.floor((now - start) / 1000);
+        const hours = Math.floor(diff / 3600);
+        const minutes = Math.floor((diff % 3600) / 60);
+        const seconds = diff % 60;
+        setSessionDuration(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setSessionDuration(null);
+    }
+  }, [activeSession, offlineSession]);
+
+  const loadActiveSession = async () => {
+    try {
+      const entries = await base44.entities.TimeEntry.filter({ 
+        employee_id: employee.employee_id, 
+        status: 'active' 
+      });
+      if (entries.length > 0) {
+        setActiveSession(entries[0]);
+      }
+    } catch (err) {
+      console.error('Failed to load active session');
+    }
+  };
+
+  const handleClockIn = async () => {
+    setLoading(true);
+    const now = new Date();
+    const entryData = {
+      employee_id: employee.employee_id,
+      employee_name: employee.full_name,
+      employee_db_id: employee.id,
+      clock_in_time: now.toISOString(),
+      clock_in_location: location,
+      clock_in_method: 'web',
+      status: 'active',
+      date: format(now, 'yyyy-MM-dd'),
+      is_late: false,
+      type: 'clock_in'
+    };
+
+    if (!isOnline) {
+      // Save offline
+      saveOfflineEntry(entryData);
+      setOfflineSession({ ...entryData, offline_id: Date.now() });
+      toast.success('Clocked in offline - will sync when online');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const entry = await base44.entities.TimeEntry.create({
+        employee_id: entryData.employee_id,
+        employee_name: entryData.employee_name,
+        clock_in_time: entryData.clock_in_time,
+        clock_in_location: entryData.clock_in_location,
+        clock_in_method: entryData.clock_in_method,
+        status: entryData.status,
+        date: entryData.date,
+        is_late: entryData.is_late
+      });
+
+      await base44.entities.Employee.update(employee.id, {
+        is_clocked_in: true,
+        current_session_id: entry.id
+      });
+
+      setActiveSession(entry);
+      toast.success('Clocked in successfully!');
+      onClockAction?.();
+    } catch (err) {
+      // If online request fails, save offline
+      saveOfflineEntry(entryData);
+      setOfflineSession({ ...entryData, offline_id: Date.now() });
+      toast.warning('Saved offline - will sync when connection restored');
+    }
+    setLoading(false);
+  };
+
+  const handleClockOut = async () => {
+    setLoading(true);
+    const now = new Date();
+    const clockInTime = new Date(activeSession?.clock_in_time || offlineSession?.clock_in_time);
+    const totalHours = (now - clockInTime) / (1000 * 60 * 60);
+    const expectedHours = employee.expected_daily_hours || 8;
+    const overtimeHours = totalHours > expectedHours ? totalHours - expectedHours : 0;
+
+    const clockOutData = {
+      employee_id: employee.employee_id,
+      employee_db_id: employee.id,
+      clock_out_time: now.toISOString(),
+      clock_out_location: location,
+      total_hours: parseFloat(totalHours.toFixed(2)),
+      overtime_hours: parseFloat(overtimeHours.toFixed(2)),
+      type: 'clock_out'
+    };
+
+    // Handle offline session clock out
+    if (offlineSession && !activeSession) {
+      updateOfflineEntry(offlineSession.offline_id, {
+        ...clockOutData,
+        status: 'completed'
+      });
+      setOfflineSession(null);
+      setSessionDuration(null);
+      toast.success(`Clocked out offline! Total: ${totalHours.toFixed(2)} hours`);
+      setLoading(false);
+      return;
+    }
+
+    if (!isOnline) {
+      saveOfflineEntry(clockOutData);
+      setActiveSession(null);
+      setSessionDuration(null);
+      toast.success(`Clocked out offline! Total: ${totalHours.toFixed(2)} hours`);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      await base44.entities.TimeEntry.update(activeSession.id, {
+        clock_out_time: clockOutData.clock_out_time,
+        clock_out_location: clockOutData.clock_out_location,
+        status: 'completed',
+        total_hours: clockOutData.total_hours,
+        overtime_hours: clockOutData.overtime_hours
+      });
+
+      await base44.entities.Employee.update(employee.id, {
+        is_clocked_in: false,
+        current_session_id: null
+      });
+
+      setActiveSession(null);
+      setSessionDuration(null);
+      toast.success(`Clocked out! Total: ${totalHours.toFixed(2)} hours`);
+      onClockAction?.();
+    } catch (err) {
+      saveOfflineEntry(clockOutData);
+      setActiveSession(null);
+      setSessionDuration(null);
+      toast.warning(`Saved offline - Total: ${totalHours.toFixed(2)} hours`);
+    }
+    setLoading(false);
+  };
+
+  const isClockedIn = employee?.is_clocked_in || !!offlineSession;
+
+  const handleSyncComplete = () => {
+    setOfflineSession(null);
+    onClockAction?.();
+  };
+
+  return (
+    <Card className="overflow-hidden border-0 shadow-xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+      <CardContent className="p-8">
+        <OfflineSync onSyncComplete={handleSyncComplete} />
+        <div className="text-center space-y-6">
+          {/* Current Time Display */}
+          <div className="space-y-2">
+            <p className="text-slate-400 text-sm font-medium uppercase tracking-wider">
+              {format(currentTime, 'EEEE, MMMM d, yyyy')}
+            </p>
+            <div className="text-6xl font-light text-white tracking-tight font-mono">
+              {format(currentTime, 'HH:mm:ss')}
+            </div>
+          </div>
+
+          {/* Status Badge */}
+          <div className="flex justify-center gap-2">
+            <Badge 
+              className={`px-4 py-2 text-sm font-medium ${
+                isClockedIn 
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                  : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full mr-2 ${isClockedIn ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`} />
+              {isClockedIn ? 'Currently Working' : 'Off Duty'}
+            </Badge>
+            {!isOnline && (
+              <Badge className="bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <WifiOff className="w-3 h-3 mr-1" />
+                Offline
+              </Badge>
+            )}
+          </div>
+
+          {/* Session Duration */}
+          {isClockedIn && sessionDuration && (
+            <div className="bg-slate-700/50 rounded-2xl p-4 space-y-1">
+              <p className="text-slate-400 text-xs uppercase tracking-wider">Session Duration</p>
+              <p className="text-3xl font-mono text-emerald-400">{sessionDuration}</p>
+            </div>
+          )}
+
+          {/* Location Status */}
+          <div className="flex items-center justify-center gap-2 text-slate-400">
+            <MapPin className="w-4 h-4" />
+            <span className="text-sm">
+              {locationError || (location ? 'Location verified' : 'Detecting location...')}
+            </span>
+          </div>
+
+          {/* Clock Button */}
+          <Button
+            onClick={isClockedIn ? handleClockOut : handleClockIn}
+            disabled={loading}
+            className={`w-full h-16 text-lg font-semibold rounded-2xl transition-all duration-300 ${
+              isClockedIn
+                ? 'bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white'
+                : 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white'
+            }`}
+          >
+            {loading ? (
+              <Loader2 className="w-6 h-6 animate-spin" />
+            ) : isClockedIn ? (
+              <>
+                <LogOut className="w-5 h-5 mr-2" />
+                Clock Out
+              </>
+            ) : (
+              <>
+                <LogIn className="w-5 h-5 mr-2" />
+                Clock In
+              </>
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
