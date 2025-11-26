@@ -1,0 +1,168 @@
+import React, { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon, Loader2 } from 'lucide-react';
+import { format, differenceInDays } from 'date-fns';
+import { cn } from "@/lib/utils";
+
+const LEAVE_TYPES = [
+  { value: 'annual', label: 'Annual Leave' },
+  { value: 'sick', label: 'Sick Leave' },
+  { value: 'unpaid', label: 'Unpaid Leave' },
+  { value: 'family_responsibility', label: 'Family Responsibility' },
+  { value: 'maternity', label: 'Maternity Leave' },
+  { value: 'paternity', label: 'Paternity Leave' },
+  { value: 'study', label: 'Study Leave' },
+  { value: 'other', label: 'Other' }
+];
+
+export default function LeaveRequestForm({ open, onClose, onSubmit, employee, loading }) {
+  const [formData, setFormData] = useState({
+    leave_type: 'annual',
+    start_date: null,
+    end_date: null,
+    reason: ''
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const totalDays = formData.start_date && formData.end_date 
+      ? differenceInDays(formData.end_date, formData.start_date) + 1 
+      : 1;
+    
+    onSubmit({
+      ...formData,
+      employee_id: employee.employee_id,
+      employee_name: employee.full_name,
+      start_date: formData.start_date ? format(formData.start_date, 'yyyy-MM-dd') : null,
+      end_date: formData.end_date ? format(formData.end_date, 'yyyy-MM-dd') : null,
+      total_days: totalDays,
+      status: 'pending'
+    });
+  };
+
+  const totalDays = formData.start_date && formData.end_date 
+    ? differenceInDays(formData.end_date, formData.start_date) + 1 
+    : 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-semibold">Request Leave</DialogTitle>
+        </DialogHeader>
+        
+        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Leave Type</Label>
+            <Select 
+              value={formData.leave_type} 
+              onValueChange={(v) => setFormData(prev => ({ ...prev, leave_type: v }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LEAVE_TYPES.map(type => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Start Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !formData.start_date && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.start_date ? format(formData.start_date, 'PP') : 'Select date'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={formData.start_date}
+                    onSelect={(date) => setFormData(prev => ({ ...prev, start_date: date }))}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            
+            <div className="space-y-2">
+              <Label>End Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !formData.end_date && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.end_date ? format(formData.end_date, 'PP') : 'Select date'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={formData.end_date}
+                    onSelect={(date) => setFormData(prev => ({ ...prev, end_date: date }))}
+                    disabled={(date) => formData.start_date && date < formData.start_date}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+
+          {totalDays > 0 && (
+            <div className="p-3 rounded-lg bg-blue-50 text-blue-700 text-sm">
+              Total: {totalDays} day{totalDays > 1 ? 's' : ''} requested
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label>Reason (Optional)</Label>
+            <Textarea
+              value={formData.reason}
+              onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+              placeholder="Please provide a reason for your leave request..."
+              rows={3}
+            />
+          </div>
+
+          <DialogFooter className="pt-4">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button 
+              type="submit" 
+              disabled={loading || !formData.start_date || !formData.end_date}
+            >
+              {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Submit Request
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
