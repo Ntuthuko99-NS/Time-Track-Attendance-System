@@ -1,0 +1,90 @@
+{
+  "name": "Employee",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string",
+      "description": "Unique employee identifier"
+    },
+    "full_name": {
+      "type": "string",
+      "description": "Employee full name"
+    },
+    "email": {
+      "type": "string",
+      "description": "Employee email"
+    },
+    "phone": {
+      "type": "string",
+      "description": "Contact phone number"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "employee",
+        "manager",
+        "admin"
+      ],
+      "default": "employee"
+    },
+    "department": {
+      "type": "string"
+    },
+    "position": {
+      "type": "string"
+    },
+    "expected_daily_hours": {
+      "type": "number",
+      "default": 8,
+      "description": "Expected working hours per day"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "is_clocked_in": {
+      "type": "boolean",
+      "default": false
+    },
+    "current_session_id": {
+      "type": "string",
+      "description": "Reference to active time entry"
+    },
+    "allowed_locations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "radius_meters": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "annual_leave_balance": {
+      "type": "number",
+      "default": 21
+    },
+    "sick_leave_balance": {
+      "type": "number",
+      "default": 30
+    },
+    "profile_image": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "employee_id",
+    "full_name",
+    "email"
+  ]
+}
