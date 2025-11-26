@@ -1,0 +1,91 @@
+import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Users, UserCheck, UserX, Clock } from 'lucide-react';
+import { isWithinInterval, parseISO, isSameDay } from 'date-fns';
+
+export default function TeamAvailability({ employees, leaveRequests, timeEntries }) {
+  const today = new Date();
+
+  const getEmployeeStatus = (employee) => {
+    // Check if on leave
+    const onLeave = leaveRequests.find(r => {
+      if (r.status !== 'approved' || r.employee_id !== employee.employee_id) return false;
+      const start = parseISO(r.start_date);
+      const end = parseISO(r.end_date);
+      return isWithinInterval(today, { start, end }) || isSameDay(today, start) || isSameDay(today, end);
+    });
+
+    if (onLeave) {
+      return { status: 'on_leave', leave_type: onLeave.leave_type };
+    }
+
+    // Check if clocked in
+    if (employee.is_clocked_in) {
+      return { status: 'working' };
+    }
+
+    return { status: 'not_clocked_in' };
+  };
+
+  const statusConfig = {
+    working: { icon: UserCheck, color: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'Working' },
+    on_leave: { icon: UserX, color: 'bg-amber-50 text-amber-700 border-amber-200', label: 'On Leave' },
+    not_clocked_in: { icon: Clock, color: 'bg-slate-50 text-slate-500 border-slate-200', label: 'Not Clocked In' }
+  };
+
+  const activeEmployees = employees.filter(e => e.is_active);
+  const workingCount = activeEmployees.filter(e => getEmployeeStatus(e).status === 'working').length;
+  const onLeaveCount = activeEmployees.filter(e => getEmployeeStatus(e).status === 'on_leave').length;
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-lg">Team Availability</CardTitle>
+          <div className="flex gap-2">
+            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+              {workingCount} Working
+            </Badge>
+            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+              {onLeaveCount} On Leave
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+          {activeEmployees.map(employee => {
+            const { status, leave_type } = getEmployeeStatus(employee);
+            const config = statusConfig[status];
+            const Icon = config.icon;
+
+            return (
+              <div 
+                key={employee.id}
+                className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50"
+              >
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-500 text-white text-xs">
+                      {employee.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">{employee.full_name}</p>
+                    <p className="text-xs text-slate-500">{employee.position || employee.department || 'Employee'}</p>
+                  </div>
+                </div>
+                <Badge variant="outline" className={config.color}>
+                  <Icon className="w-3 h-3 mr-1" />
+                  {status === 'on_leave' ? leave_type?.replace('_', ' ') : config.label}
+                </Badge>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
