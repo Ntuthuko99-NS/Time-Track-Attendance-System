@@ -1,0 +1,210 @@
+import React, { useState, useEffect } from 'react';
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { useQuery } from '@tanstack/react-query';
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CalendarIcon, Download, Clock, TrendingUp } from 'lucide-react';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, isWithinInterval } from 'date-fns';
+import { cn } from "@/lib/utils";
+import TimesheetTable from '@/components/timesheet/TimesheetTable';
+
+export default function Timesheet() {
+  const [selectedEmployee, setSelectedEmployee] = useState('all');
+  const [dateRange, setDateRange] = useState({
+    from: startOfWeek(new Date(), { weekStartsOn: 1 }),
+    to: endOfWeek(new Date(), { weekStartsOn: 1 })
+  });
+  const [viewMode, setViewMode] = useState('week');
+  const [currentUser, setCurrentUser] = useState(null);
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => base44.entities.Employee.list()
+  });
+
+  const { data: timeEntries = [] } = useQuery({
+    queryKey: ['timeEntries'],
+    queryFn: () => base44.entities.TimeEntry.list('-created_date', 500)
+  });
+
+  useEffect(() => {
+    base44.auth.me().then(setCurrentUser);
+  }, []);
+
+  useEffect(() => {
+    const today = new Date();
+    if (viewMode === 'week') {
+      setDateRange({
+        from: startOfWeek(today, { weekStartsOn: 1 }),
+        to: endOfWeek(today, { weekStartsOn: 1 })
+      });
+    } else if (viewMode === 'month') {
+      setDateRange({
+        from: startOfMonth(today),
+        to: endOfMonth(today)
+      });
+    }
+  }, [viewMode]);
+
+  const filteredEntries = timeEntries.filter(entry => {
+    const entryDate = parseISO(entry.date);
+    const inDateRange = isWithinInterval(entryDate, { start: dateRange.from, end: dateRange.to });
+    const matchesEmployee = selectedEmployee === 'all' || entry.employee_id === selectedEmployee;
+    return inDateRange && matchesEmployee;
+  });
+
+  // Calculate summary stats
+  const totalHours = filteredEntries.reduce((sum, e) => sum + (e.total_hours || 0), 0);
+  const totalOvertime = filteredEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+  const uniqueDays = new Set(filteredEntries.map(e => e.date)).size;
+  const avgHoursPerDay = uniqueDays > 0 ? totalHours / uniqueDays : 0;
+
+  // Daily breakdown for chart
+  const days = eachDayOfInterval({ start: dateRange.from, end: dateRange.to });
+  const dailyData = days.map(day => {
+    const dayStr = format(day, 'yyyy-MM-dd');
+    const dayEntries = filteredEntries.filter(e => e.date === dayStr);
+    return {
+      date: format(day, 'EEE'),
+      fullDate: dayStr,
+      hours: dayEntries.reduce((sum, e) => sum + (e.total_hours || 0), 0),
+      overtime: dayEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0)
+    };
+  });
+
+  const maxHours = Math.max(...dailyData.map(d => d.hours), 8);
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Timesheet</h1>
+            <p className="text-slate-500 mt-1">
+              {format(dateRange.from, 'MMM d')} - {format(dateRange.to, 'MMM d, yyyy')}
+            </p>
+          </div>
+          <Button variant="outline">
+            <Download className="w-4 h-4 mr-2" />
+            Export
+          </Button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-4 mb-6">
+          <Tabs value={viewMode} onValueChange={setViewMode}>
+            <TabsList>
+              <TabsTrigger value="week">Weekly</TabsTrigger>
+              <TabsTrigger value="month">Monthly</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Select employee" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Employees</SelectItem>
+              {employees.map(emp => (
+                <SelectItem key={emp.id} value={emp.employee_id}>
+                  {emp.full_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={cn("justify-start text-left font-normal")}>
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {format(dateRange.from, 'PP')} - {format(dateRange.to, 'PP')}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="range"
+                selected={dateRange}
+                onSelect={(range) => range && setDateRange(range)}
+                numberOfMonths={2}
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-sm text-slate-500">Total Hours</p>
+              <p className="text-2xl font-semibold">{totalHours.toFixed(1)}h</p>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-sm text-slate-500">Overtime</p>
+              <p className="text-2xl font-semibold text-amber-600">{totalOvertime.toFixed(1)}h</p>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-sm text-slate-500">Days Worked</p>
+              <p className="text-2xl font-semibold">{uniqueDays}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-sm text-slate-500">Avg Hours/Day</p>
+              <p className="text-2xl font-semibold">{avgHoursPerDay.toFixed(1)}h</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Hours Chart */}
+        <Card className="border-0 shadow-sm mb-6">
+          <CardHeader>
+            <CardTitle className="text-lg">Daily Hours</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-2 h-40">
+              {dailyData.map((day, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div className="w-full flex flex-col-reverse items-center">
+                    {day.overtime > 0 && (
+                      <div 
+                        className="w-full max-w-[40px] bg-amber-400 rounded-t"
+                        style={{ height: `${(day.overtime / maxHours) * 100}px` }}
+                      />
+                    )}
+                    <div 
+                      className="w-full max-w-[40px] bg-blue-500 rounded-t"
+                      style={{ height: `${((day.hours - day.overtime) / maxHours) * 100}px` }}
+                    />
+                  </div>
+                  <span className="text-xs text-slate-500">{day.date}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-center gap-6 mt-4">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-blue-500 rounded" />
+                <span className="text-sm text-slate-500">Regular Hours</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-amber-400 rounded" />
+                <span className="text-sm text-slate-500">Overtime</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Time Entries Table */}
+        <TimesheetTable entries={filteredEntries} showEmployee={selectedEmployee === 'all'} />
+      </div>
+    </div>
+  );
+}
