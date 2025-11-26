@@ -1,0 +1,271 @@
+import React, { useState } from 'react';
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { 
+  Bell, Clock, AlertTriangle, UserX, TrendingUp, 
+  Check, X, Mail, RefreshCw, Filter, MessageSquare 
+} from 'lucide-react';
+import { format, formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
+import { checkShiftAlerts, sendAlertEmail } from '@/components/alerts/AlertService';
+import WhatsAppConnect from '@/components/alerts/WhatsAppConnect';
+
+const ALERT_ICONS = {
+  shift_reminder: Clock,
+  late_arrival: AlertTriangle,
+  missed_shift: UserX,
+  overtime_warning: TrendingUp,
+  forgot_clock_out: Clock
+};
+
+const ALERT_COLORS = {
+  shift_reminder: 'bg-blue-50 text-blue-700 border-blue-200',
+  late_arrival: 'bg-amber-50 text-amber-700 border-amber-200',
+  missed_shift: 'bg-red-50 text-red-700 border-red-200',
+  overtime_warning: 'bg-purple-50 text-purple-700 border-purple-200',
+  forgot_clock_out: 'bg-orange-50 text-orange-700 border-orange-200'
+};
+
+export default function Alerts() {
+  const queryClient = useQueryClient();
+  const [checking, setChecking] = useState(false);
+  const [activeTab, setActiveTab] = useState('pending');
+
+  const { data: alerts = [], isLoading } = useQuery({
+    queryKey: ['alerts'],
+    queryFn: () => base44.entities.Alert.list('-created_date', 200)
+  });
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => base44.entities.Employee.list()
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.Alert.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] })
+  });
+
+  const handleCheckAlerts = async () => {
+    setChecking(true);
+    const newAlerts = await checkShiftAlerts();
+    queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    toast.success(`Generated ${newAlerts.length} new alerts`);
+    setChecking(false);
+  };
+
+  const handleDismiss = (alert) => {
+    updateMutation.mutate({ id: alert.id, data: { status: 'dismissed' } });
+  };
+
+  const handleMarkRead = (alert) => {
+    updateMutation.mutate({ id: alert.id, data: { status: 'read' } });
+  };
+
+  const handleSendEmail = async (alert) => {
+    const employee = employees.find(e => e.employee_id === alert.employee_id);
+    if (employee?.email) {
+      const success = await sendAlertEmail(alert, employee.email);
+      if (success) {
+        toast.success('Email sent successfully');
+        queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      }
+    } else {
+      toast.error('No email address found');
+    }
+  };
+
+  const handleBulkSendEmails = async () => {
+    const pendingAlerts = alerts.filter(a => a.status === 'pending');
+    let sent = 0;
+    for (const alert of pendingAlerts) {
+      const employee = employees.find(e => e.employee_id === alert.employee_id);
+      if (employee?.email) {
+        const success = await sendAlertEmail(alert, employee.email);
+        if (success) sent++;
+      }
+    }
+    toast.success(`Sent ${sent} email notifications`);
+    queryClient.invalidateQueries({ queryKey: ['alerts'] });
+  };
+
+  const filteredAlerts = {
+    pending: alerts.filter(a => a.status === 'pending'),
+    sent: alerts.filter(a => a.status === 'sent'),
+    all: alerts
+  };
+
+  const stats = {
+    pending: filteredAlerts.pending.length,
+    lateArrivals: alerts.filter(a => a.type === 'late_arrival' && a.status !== 'dismissed').length,
+    missedShifts: alerts.filter(a => a.type === 'missed_shift' && a.status !== 'dismissed').length
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Alerts & Notifications</h1>
+            <p className="text-slate-500 mt-1">Manage shift reminders and attendance alerts</p>
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={handleBulkSendEmails}>
+              <Mail className="w-4 h-4 mr-2" />
+              Send All Pending
+            </Button>
+            <Button onClick={handleCheckAlerts} disabled={checking}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${checking ? 'animate-spin' : ''}`} />
+              Check Now
+            </Button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-50">
+                <Bell className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold">{stats.pending}</p>
+                <p className="text-sm text-slate-500">Pending Alerts</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-orange-50">
+                <AlertTriangle className="w-5 h-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold">{stats.lateArrivals}</p>
+                <p className="text-sm text-slate-500">Late Arrivals</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-red-50">
+                <UserX className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold">{stats.missedShifts}</p>
+                <p className="text-sm text-slate-500">Missed Shifts</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Alerts Table */}
+          <div className="lg:col-span-2">
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                  <TabsList>
+                    <TabsTrigger value="pending">
+                      Pending
+                      {stats.pending > 0 && (
+                        <Badge className="ml-2 bg-amber-500">{stats.pending}</Badge>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="sent">Sent</TabsTrigger>
+                    <TabsTrigger value="all">All</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50">
+                      <TableHead>Type</TableHead>
+                      <TableHead>Employee</TableHead>
+                      <TableHead>Message</TableHead>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAlerts[activeTab].length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-12 text-slate-400">
+                          <Bell className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                          No alerts found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredAlerts[activeTab].map(alert => {
+                        const Icon = ALERT_ICONS[alert.type] || Bell;
+                        return (
+                          <TableRow key={alert.id}>
+                            <TableCell>
+                              <Badge variant="outline" className={ALERT_COLORS[alert.type]}>
+                                <Icon className="w-3 h-3 mr-1" />
+                                {alert.type.replace('_', ' ')}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {alert.employee_name || '-'}
+                            </TableCell>
+                            <TableCell className="max-w-xs truncate text-slate-600">
+                              {alert.message}
+                            </TableCell>
+                            <TableCell className="text-slate-500 text-sm">
+                              {formatDistanceToNow(new Date(alert.created_date), { addSuffix: true })}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                {alert.status === 'pending' && (
+                                  <>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleSendEmail(alert)}
+                                    >
+                                      <Mail className="w-4 h-4" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleMarkRead(alert)}
+                                    >
+                                      <Check className="w-4 h-4" />
+                                    </Button>
+                                  </>
+                                )}
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => handleDismiss(alert)}
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* WhatsApp Connect */}
+          <div>
+            <WhatsAppConnect />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
