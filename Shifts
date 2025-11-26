@@ -1,0 +1,261 @@
+import React, { useState } from 'react';
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Plus, Clock, MapPin, Users, MoreVertical, Edit, Trash2, UserPlus } from 'lucide-react';
+import { toast } from 'sonner';
+import ShiftForm from '@/components/shifts/ShiftForm';
+
+const DAY_LABELS = {
+  monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed',
+  thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun'
+};
+
+export default function Shifts() {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editingShift, setEditingShift] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [assignModal, setAssignModal] = useState(null);
+
+  const { data: shifts = [], isLoading } = useQuery({
+    queryKey: ['shifts'],
+    queryFn: () => base44.entities.Shift.list()
+  });
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => base44.entities.Employee.list()
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data) => base44.entities.Shift.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      setShowForm(false);
+      toast.success('Shift created successfully');
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.Shift.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      setShowForm(false);
+      setEditingShift(null);
+      setAssignModal(null);
+      toast.success('Shift updated');
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => base44.entities.Shift.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      setDeleteConfirm(null);
+      toast.success('Shift deleted');
+    }
+  });
+
+  const handleSubmit = (data) => {
+    if (editingShift) {
+      updateMutation.mutate({ id: editingShift.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const toggleEmployeeAssignment = (shift, employee) => {
+    const currentAssigned = shift.assigned_employees || [];
+    const isAssigned = currentAssigned.some(e => e.employee_id === employee.employee_id);
+    
+    let newAssigned;
+    if (isAssigned) {
+      newAssigned = currentAssigned.filter(e => e.employee_id !== employee.employee_id);
+    } else {
+      newAssigned = [...currentAssigned, { employee_id: employee.employee_id, employee_name: employee.full_name }];
+    }
+    
+    updateMutation.mutate({ id: shift.id, data: { ...shift, assigned_employees: newAssigned } });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Shift Scheduling</h1>
+            <p className="text-slate-500 mt-1">Manage work shifts and assign employees</p>
+          </div>
+          <Button onClick={() => { setEditingShift(null); setShowForm(true); }} className="bg-slate-900 hover:bg-slate-800">
+            <Plus className="w-4 h-4 mr-2" />
+            Create Shift
+          </Button>
+        </div>
+
+        {/* Shifts Grid */}
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-white rounded-xl h-48 animate-pulse" />
+            ))}
+          </div>
+        ) : shifts.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-xl shadow-sm">
+            <Clock className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-slate-900">No shifts created</h3>
+            <p className="text-slate-500 mt-1 mb-4">Create your first shift to get started</p>
+            <Button onClick={() => setShowForm(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Create Shift
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {shifts.map(shift => (
+              <Card key={shift.id} className="border-0 shadow-sm hover:shadow-md transition-shadow group">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-3 h-12 rounded-full" 
+                        style={{ backgroundColor: shift.color || '#3b82f6' }}
+                      />
+                      <div>
+                        <CardTitle className="text-lg">{shift.name}</CardTitle>
+                        <div className="flex items-center gap-1 text-sm text-slate-500 mt-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          {shift.start_time} - {shift.end_time}
+                        </div>
+                      </div>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100">
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setAssignModal(shift)}>
+                          <UserPlus className="w-4 h-4 mr-2" />
+                          Assign Employees
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => { setEditingShift(shift); setShowForm(true); }}>
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setDeleteConfirm(shift)} className="text-red-600">
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap gap-1">
+                    {shift.days_of_week?.map(day => (
+                      <Badge key={day} variant="secondary" className="text-xs">
+                        {DAY_LABELS[day]}
+                      </Badge>
+                    ))}
+                  </div>
+                  
+                  {shift.location && (
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <MapPin className="w-4 h-4" />
+                      {shift.location}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <Users className="w-4 h-4" />
+                    {shift.assigned_employees?.length || 0} employees assigned
+                  </div>
+
+                  {!shift.is_active && (
+                    <Badge variant="outline" className="bg-slate-50 text-slate-500">
+                      Inactive
+                    </Badge>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Shift Form */}
+        <ShiftForm
+          open={showForm}
+          onClose={() => { setShowForm(false); setEditingShift(null); }}
+          onSubmit={handleSubmit}
+          shift={editingShift}
+          loading={createMutation.isPending || updateMutation.isPending}
+        />
+
+        {/* Assign Employees Modal */}
+        <AlertDialog open={!!assignModal} onOpenChange={() => setAssignModal(null)}>
+          <AlertDialogContent className="max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Assign Employees to {assignModal?.name}</AlertDialogTitle>
+              <AlertDialogDescription>
+                Select employees to assign to this shift
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="max-h-64 overflow-y-auto space-y-2 my-4">
+              {employees.filter(e => e.is_active).map(emp => {
+                const isAssigned = assignModal?.assigned_employees?.some(e => e.employee_id === emp.employee_id) || false;
+                return (
+                  <div 
+                    key={emp.id}
+                    onClick={() => toggleEmployeeAssignment(assignModal, emp)}
+                    className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
+                      isAssigned ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div>
+                      <p className="font-medium text-slate-900">{emp.full_name}</p>
+                      <p className="text-sm text-slate-500">{emp.position || emp.department}</p>
+                    </div>
+                    {isAssigned && (
+                      <Badge className="bg-blue-500">Assigned</Badge>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Done</AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Delete Confirmation */}
+        <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Shift?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete "{deleteConfirm?.name}"? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => deleteMutation.mutate(deleteConfirm.id)}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
+  );
+}
