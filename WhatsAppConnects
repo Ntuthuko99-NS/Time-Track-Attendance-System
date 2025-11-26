@@ -1,0 +1,56 @@
+import React from 'react';
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { MessageSquare, ExternalLink, Bell, Clock, AlertTriangle } from 'lucide-react';
+
+export default function WhatsAppConnect() {
+  const whatsappUrl = base44.agents.getWhatsAppConnectURL('shift_reminder');
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-green-50">
+            <MessageSquare className="w-5 h-5 text-green-600" />
+          </div>
+          <div>
+            <CardTitle className="text-lg">WhatsApp Notifications</CardTitle>
+            <CardDescription>Get shift reminders and alerts on WhatsApp</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 text-sm text-slate-600">
+            <Bell className="w-4 h-4 text-slate-400" />
+            <span>Shift reminders 30 min before start</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-slate-600">
+            <Clock className="w-4 h-4 text-slate-400" />
+            <span>Clock in/out reminders</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-slate-600">
+            <AlertTriangle className="w-4 h-4 text-slate-400" />
+            <span>Schedule changes and updates</span>
+          </div>
+        </div>
+
+        <Button 
+          asChild
+          className="w-full bg-green-600 hover:bg-green-700"
+        >
+          <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+            <MessageSquare className="w-4 h-4 mr-2" />
+            Connect WhatsApp
+            <ExternalLink className="w-4 h-4 ml-2" />
+          </a>
+        </Button>
+
+        <p className="text-xs text-slate-400 text-center">
+          You'll be redirected to WhatsApp to complete the setup
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
