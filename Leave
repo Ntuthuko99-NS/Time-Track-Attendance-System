@@ -1,0 +1,290 @@
+import React, { useState, useEffect } from 'react';
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Plus, Calendar, Clock, Check, X, CalendarDays, Users } from 'lucide-react';
+import { format } from 'date-fns';
+import { toast } from 'sonner';
+import LeaveRequestForm from '@/components/leave/LeaveRequestForm';
+import LeaveRequestCard from '@/components/leave/LeaveRequestCard';
+import LeaveCalendar from '@/components/leave/LeaveCalendar';
+import LeaveBalanceCard from '@/components/leave/LeaveBalanceCard';
+import TeamAvailability from '@/components/leave/TeamAvailability';
+
+export default function Leave() {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [currentEmployee, setCurrentEmployee] = useState(null);
+  const [activeTab, setActiveTab] = useState('pending');
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => base44.entities.Employee.list()
+  });
+
+  const { data: leaveRequests = [], isLoading } = useQuery({
+    queryKey: ['leaveRequests'],
+    queryFn: () => base44.entities.LeaveRequest.list('-created_date')
+  });
+
+  const { data: timeEntries = [] } = useQuery({
+    queryKey: ['timeEntries'],
+    queryFn: () => base44.entities.TimeEntry.filter({ date: format(new Date(), 'yyyy-MM-dd') })
+  });
+
+  useEffect(() => {
+    base44.auth.me().then(setCurrentUser);
+  }, []);
+
+  useEffect(() => {
+    if (currentUser && employees.length > 0) {
+      const emp = employees.find(e => e.email === currentUser.email);
+      setCurrentEmployee(emp);
+    }
+  }, [currentUser, employees]);
+
+  const createMutation = useMutation({
+    mutationFn: (data) => base44.entities.LeaveRequest.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leaveRequests'] });
+      setShowForm(false);
+      toast.success('Leave request submitted');
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.LeaveRequest.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leaveRequests'] });
+      toast.success('Leave request updated');
+    }
+  });
+
+  const handleApprove = (request) => {
+    updateMutation.mutate({
+      id: request.id,
+      data: {
+        status: 'approved',
+        reviewed_by: currentUser?.full_name || currentUser?.email,
+        reviewed_at: new Date().toISOString()
+      }
+    });
+  };
+
+  const handleReject = (request) => {
+    updateMutation.mutate({
+      id: request.id,
+      data: {
+        status: 'rejected',
+        reviewed_by: currentUser?.full_name || currentUser?.email,
+        reviewed_at: new Date().toISOString()
+      }
+    });
+  };
+
+  const isManager = currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin' || currentUser?.role === 'admin';
+
+  const myRequests = leaveRequests.filter(r => r.employee_id === currentEmployee?.employee_id);
+  const pendingRequests = leaveRequests.filter(r => r.status === 'pending');
+  const allByStatus = {
+    pending: leaveRequests.filter(r => r.status === 'pending'),
+    approved: leaveRequests.filter(r => r.status === 'approved'),
+    rejected: leaveRequests.filter(r => r.status === 'rejected')
+  };
+
+  // Leave balances
+  const approvedThisYear = myRequests.filter(r => 
+    r.status === 'approved' && 
+    new Date(r.start_date).getFullYear() === new Date().getFullYear()
+  );
+  const usedAnnual = approvedThisYear.filter(r => r.leave_type === 'annual').reduce((sum, r) => sum + r.total_days, 0);
+  const usedSick = approvedThisYear.filter(r => r.leave_type === 'sick').reduce((sum, r) => sum + r.total_days, 0);
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Leave Management</h1>
+            <p className="text-slate-500 mt-1">Request and manage time off</p>
+          </div>
+          <Button onClick={() => setShowForm(true)} className="bg-slate-900 hover:bg-slate-800">
+            <Plus className="w-4 h-4 mr-2" />
+            Request Leave
+          </Button>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-sm text-slate-500">Annual Leave</p>
+              <p className="text-2xl font-semibold">
+                {currentEmployee ? (currentEmployee.annual_leave_balance || 21) - usedAnnual : '-'}
+                <span className="text-sm text-slate-400 font-normal">/{currentEmployee?.annual_leave_balance || 21}</span>
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-sm text-slate-500">Sick Leave</p>
+              <p className="text-2xl font-semibold">
+                {currentEmployee ? (currentEmployee.sick_leave_balance || 30) - usedSick : '-'}
+                <span className="text-sm text-slate-400 font-normal">/{currentEmployee?.sick_leave_balance || 30}</span>
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-sm text-slate-500">Pending</p>
+              <p className="text-2xl font-semibold text-amber-600">
+                {myRequests.filter(r => r.status === 'pending').length}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-sm text-slate-500">Days Taken</p>
+              <p className="text-2xl font-semibold">
+                {approvedThisYear.reduce((sum, r) => sum + (r.total_days || 0), 0)}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="mb-6">
+            <TabsTrigger value="pending">
+              Pending
+              {pendingRequests.length > 0 && (
+                <Badge className="ml-2 bg-amber-500">{pendingRequests.length}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="my-requests">My Requests</TabsTrigger>
+            <TabsTrigger value="calendar">
+              <CalendarDays className="w-4 h-4 mr-1" />
+              Calendar
+            </TabsTrigger>
+            {isManager && <TabsTrigger value="team">
+              <Users className="w-4 h-4 mr-1" />
+              Team
+            </TabsTrigger>}
+            {isManager && <TabsTrigger value="all">All Requests</TabsTrigger>}
+          </TabsList>
+
+          <TabsContent value="pending">
+            {pendingRequests.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-xl shadow-sm">
+                <Clock className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-slate-900">No pending requests</h3>
+                <p className="text-slate-500 mt-1">All leave requests have been processed</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pendingRequests.map(request => (
+                  <LeaveRequestCard
+                    key={request.id}
+                    request={request}
+                    onApprove={handleApprove}
+                    onReject={handleReject}
+                    showActions={isManager}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="my-requests">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                {myRequests.length === 0 ? (
+                  <div className="text-center py-16 bg-white rounded-xl shadow-sm">
+                    <Calendar className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-slate-900">No leave requests</h3>
+                    <p className="text-slate-500 mt-1 mb-4">You haven't submitted any leave requests yet</p>
+                    <Button onClick={() => setShowForm(true)}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Request Leave
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {myRequests.map(request => (
+                      <LeaveRequestCard key={request.id} request={request} />
+                    ))}
+                  </div>
+                )}
+              </div>
+              {currentEmployee && (
+                <LeaveBalanceCard employee={currentEmployee} leaveRequests={leaveRequests} />
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="calendar">
+            <LeaveCalendar leaveRequests={leaveRequests} employees={employees} />
+          </TabsContent>
+
+          {isManager && (
+            <TabsContent value="team">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <TeamAvailability 
+                  employees={employees} 
+                  leaveRequests={leaveRequests} 
+                  timeEntries={timeEntries} 
+                />
+                <LeaveCalendar leaveRequests={leaveRequests} employees={employees} />
+              </div>
+            </TabsContent>
+          )}
+
+          {isManager && (
+            <TabsContent value="all">
+              <div className="space-y-6">
+                {['pending', 'approved', 'rejected'].map(status => (
+                  <div key={status}>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-3 capitalize">
+                      {status} ({allByStatus[status].length})
+                    </h3>
+                    {allByStatus[status].length === 0 ? (
+                      <p className="text-slate-500 text-sm">No {status} requests</p>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {allByStatus[status].map(request => (
+                          <LeaveRequestCard
+                            key={request.id}
+                            request={request}
+                            onApprove={handleApprove}
+                            onReject={handleReject}
+                            showActions={status === 'pending'}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
+          )}
+        </Tabs>
+
+        {/* Leave Request Form */}
+        {currentEmployee && (
+          <LeaveRequestForm
+            open={showForm}
+            onClose={() => setShowForm(false)}
+            onSubmit={(data) => createMutation.mutate(data)}
+            employee={currentEmployee}
+            loading={createMutation.isPending}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
