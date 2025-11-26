@@ -1,0 +1,85 @@
+{
+  "name": "Alert",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "shift_reminder",
+        "late_arrival",
+        "missed_shift",
+        "overtime_warning",
+        "forgot_clock_out",
+        "location_warning"
+      ],
+      "description": "Type of alert"
+    },
+    "employee_id": {
+      "type": "string"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "shift_id": {
+      "type": "string"
+    },
+    "shift_name": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "sent",
+        "read",
+        "dismissed"
+      ],
+      "default": "pending"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "default": "medium"
+    },
+    "sent_via": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "app",
+          "email",
+          "whatsapp"
+        ]
+      }
+    },
+    "scheduled_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "target_audience": {
+      "type": "string",
+      "enum": [
+        "employee",
+        "manager",
+        "admin",
+        "all"
+      ],
+      "default": "employee"
+    }
+  },
+  "required": [
+    "type",
+    "message"
+  ]
+}
