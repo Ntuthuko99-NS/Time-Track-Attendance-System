@@ -1,0 +1,192 @@
+import React, { useState } from 'react';
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Plus, Search, Filter } from 'lucide-react';
+import { toast } from 'sonner';
+import EmployeeCard from '@/components/employees/EmployeeCard';
+import EmployeeForm from '@/components/employees/EmployeeForm';
+
+export default function Employees() {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('active');
+
+  const { data: employees = [], isLoading } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => base44.entities.Employee.list()
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data) => base44.entities.Employee.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      setShowForm(false);
+      toast.success('Employee added successfully');
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.Employee.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      setShowForm(false);
+      setEditingEmployee(null);
+      toast.success('Employee updated successfully');
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => base44.entities.Employee.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      setDeleteConfirm(null);
+      toast.success('Employee deleted');
+    }
+  });
+
+  const handleSubmit = (data) => {
+    if (editingEmployee) {
+      updateMutation.mutate({ id: editingEmployee.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const handleEdit = (employee) => {
+    setEditingEmployee(employee);
+    setShowForm(true);
+  };
+
+  const handleDelete = (employee) => {
+    setDeleteConfirm(employee);
+  };
+
+  const filteredEmployees = employees.filter(emp => {
+    const matchesSearch = emp.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      emp.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      emp.employee_id?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesRole = roleFilter === 'all' || emp.role === roleFilter;
+    const matchesStatus = statusFilter === 'all' || 
+      (statusFilter === 'active' && emp.is_active) ||
+      (statusFilter === 'inactive' && !emp.is_active);
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Employees</h1>
+            <p className="text-slate-500 mt-1">{employees.length} total employees</p>
+          </div>
+          <Button onClick={() => { setEditingEmployee(null); setShowForm(true); }} className="bg-slate-900 hover:bg-slate-800">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Employee
+          </Button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="Search by name, email, or ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Role" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Roles</SelectItem>
+              <SelectItem value="employee">Employee</SelectItem>
+              <SelectItem value="manager">Manager</SelectItem>
+              <SelectItem value="admin">Admin</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Employee Grid */}
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="bg-white rounded-xl h-64 animate-pulse" />
+            ))}
+          </div>
+        ) : filteredEmployees.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Search className="w-8 h-8 text-slate-400" />
+            </div>
+            <h3 className="text-lg font-medium text-slate-900">No employees found</h3>
+            <p className="text-slate-500 mt-1">Try adjusting your search or filters</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredEmployees.map(employee => (
+              <EmployeeCard
+                key={employee.id}
+                employee={employee}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Form Dialog */}
+        <EmployeeForm
+          open={showForm}
+          onClose={() => { setShowForm(false); setEditingEmployee(null); }}
+          onSubmit={handleSubmit}
+          employee={editingEmployee}
+          loading={createMutation.isPending || updateMutation.isPending}
+        />
+
+        {/* Delete Confirmation */}
+        <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Employee?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete {deleteConfirm?.full_name}? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => deleteMutation.mutate(deleteConfirm.id)}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
+  );
+}
