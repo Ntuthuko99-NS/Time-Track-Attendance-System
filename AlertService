@@ -1,0 +1,175 @@
+import { ntuthuko } from '@/api/ntuthukoClient';
+import { format, addMinutes, isWithinInterval, parseISO, differenceInMinutes } from 'date-fns';
+
+// Check and generate alerts for shifts
+export async function checkShiftAlerts() {
+  const now = new Date();
+  const alerts = [];
+
+  try {
+    const [shifts, employees, timeEntries, existingAlerts] = await Promise.all([
+      base44.entities.Shift.list(),
+      base44.entities.Employee.list(),
+      base44.entities.TimeEntry.filter({ date: format(now, 'yyyy-MM-dd') }),
+      base44.entities.Alert.filter({ status: 'pending' })
+    ]);
+
+    const todayName = format(now, 'EEEE').toLowerCase();
+    const todaysShifts = shifts.filter(s => s.is_active && s.days_of_week?.includes(todayName));
+
+    for (const shift of todaysShifts) {
+      const [shiftHour, shiftMin] = shift.start_time.split(':').map(Number);
+      const shiftStartTime = new Date(now);
+      shiftStartTime.setHours(shiftHour, shiftMin, 0, 0);
+
+      const assignedEmployees = shift.assigned_employees || [];
+
+      for (const assigned of assignedEmployees) {
+        const employee = employees.find(e => e.employee_id === assigned.employee_id);
+        if (!employee || !employee.is_active) continue;
+
+        const employeeEntry = timeEntries.find(t => t.employee_id === assigned.employee_id);
+        const minutesToShift = differenceInMinutes(shiftStartTime, now);
+
+        // Shift reminder - 30 minutes before
+        if (minutesToShift > 0 && minutesToShift <= 30 && !employeeEntry) {
+          const existingReminder = existingAlerts.find(
+            a => a.type === 'shift_reminder' && 
+                 a.employee_id === assigned.employee_id && 
+                 a.shift_id === shift.id
+          );
+          
+          if (!existingReminder) {
+            alerts.push({
+              type: 'shift_reminder',
+              employee_id: assigned.employee_id,
+              employee_name: assigned.employee_name,
+              shift_id: shift.id,
+              shift_name: shift.name,
+              message: `Reminder: Your ${shift.name} shift starts at ${shift.start_time}. Don't forget to clock in!`,
+              priority: 'medium',
+              target_audience: 'employee',
+              scheduled_time: shiftStartTime.toISOString()
+            });
+          }
+        }
+
+        // Late arrival - 15 minutes after shift start
+        if (minutesToShift < -15 && !employeeEntry) {
+          const existingLateAlert = existingAlerts.find(
+            a => a.type === 'late_arrival' && 
+                 a.employee_id === assigned.employee_id && 
+                 a.shift_id === shift.id
+          );
+          
+          if (!existingLateAlert) {
+            // Alert for employee
+            alerts.push({
+              type: 'late_arrival',
+              employee_id: assigned.employee_id,
+              employee_name: assigned.employee_name,
+              shift_id: shift.id,
+              shift_name: shift.name,
+              message: `You are late for your ${shift.name} shift. Please clock in immediately.`,
+              priority: 'high',
+              target_audience: 'employee',
+              scheduled_time: now.toISOString()
+            });
+
+            // Alert for manager
+            alerts.push({
+              type: 'late_arrival',
+              employee_id: assigned.employee_id,
+              employee_name: assigned.employee_name,
+              shift_id: shift.id,
+              shift_name: shift.name,
+              message: `${assigned.employee_name} is late for ${shift.name} shift (started at ${shift.start_time}).`,
+              priority: 'high',
+              target_audience: 'manager',
+              scheduled_time: now.toISOString()
+            });
+          }
+        }
+
+        // Missed shift - 1 hour after shift start
+        if (minutesToShift < -60 && !employeeEntry) {
+          const existingMissedAlert = existingAlerts.find(
+            a => a.type === 'missed_shift' && 
+                 a.employee_id === assigned.employee_id && 
+                 a.shift_id === shift.id
+          );
+          
+          if (!existingMissedAlert) {
+            alerts.push({
+              type: 'missed_shift',
+              employee_id: assigned.employee_id,
+              employee_name: assigned.employee_name,
+              shift_id: shift.id,
+              shift_name: shift.name,
+              message: `${assigned.employee_name} has missed their ${shift.name} shift scheduled for ${shift.start_time}.`,
+              priority: 'high',
+              target_audience: 'manager',
+              scheduled_time: now.toISOString()
+            });
+          }
+        }
+      }
+    }
+
+    // Create alerts in database
+    for (const alert of alerts) {
+      await base44.entities.Alert.create(alert);
+    }
+
+    return alerts;
+  } catch (err) {
+    console.error('Error checking shift alerts:', err);
+    return [];
+  }
+}
+
+// Send alert via email
+export async function sendAlertEmail(alert, recipientEmail) {
+  try {
+    await base44.integrations.Core.SendEmail({
+      to: recipientEmail,
+      subject: getAlertSubject(alert),
+      body: formatAlertEmailBody(alert)
+    });
+    
+    await base44.entities.Alert.update(alert.id, {
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      sent_via: [...(alert.sent_via || []), 'email']
+    });
+    
+    return true;
+  } catch (err) {
+    console.error('Failed to send alert email:', err);
+    return false;
+  }
+}
+
+function getAlertSubject(alert) {
+  const subjects = {
+    shift_reminder: `Shift Reminder: ${alert.shift_name}`,
+    late_arrival: `Late Arrival Alert: ${alert.employee_name}`,
+    missed_shift: `Missed Shift Alert: ${alert.employee_name}`,
+    overtime_warning: `Overtime Warning: ${alert.employee_name}`,
+    forgot_clock_out: `Clock Out Reminder`
+  };
+  return subjects[alert.type] || 'TimeTrack Alert';
+}
+
+function formatAlertEmailBody(alert) {
+  return `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2 style="color: #1e293b;">${getAlertSubject(alert)}</h2>
+      <p style="color: #475569; font-size: 16px;">${alert.message}</p>
+      <hr style="border: 1px solid #e2e8f0; margin: 20px 0;" />
+      <p style="color: #94a3b8; font-size: 12px;">
+        This is an automated message from TimeTrack Attendance System.
+      </p>
+    </div>
+  `;
+}
